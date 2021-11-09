@@ -37,4 +37,8 @@ we converted the window data to tensors
 we built the neural network  for each stock this time changing LSTM, changing input_dim to input_shape, and giving it the correct shape
 
 
-To further improve the model we could tune the model in a research notebook,
+To further improve the model we could tune the model in a research notebook
+we could also adjust the weight's logic 
+we could adjust the time we look back 
+we could add indicators 
+we could add more coins and we could adjust the window 
