@@ -1,0 +1,227 @@
+#Originalcode sourced from 
+#https://github.com/QuantConnect/Lean/blob/master/Algorithm.Python/KerasNeuralNetworkAlgorithm.py
+
+from AlgorithmImports import *
+from io import StringIO
+from keras.models import Sequential
+from keras.layers import Dense, Activation, LSTM
+from keras.optimizers import SGD
+from keras.utils.generic_utils import serialize_keras_object
+class KerasNeuralNetworkAlgorithm(QCAlgorithm):
+    """
+    The KerasNeuralNetworkAlgorithm is an algorithm that inherits from the QCAlgorithm class.  It will be training
+    the model every monday to keep the data fresh and dynamic, while
+    trading three times daily.
+    Attributes-
+    self.lookback - training the model based off of the past n days
+    self.modelBySymbol - a dictionary of models accessible by a symbol
+    self.window - the number of previous data points used to forecast a prediction
+    """
+    def Initialize(self):
+        self.SetStartDate(2019, 1, 1)   # Set Start Date
+        self.SetEndDate(2020, 1, 1)     # Set End Date
+        self.SetCash(100000)            # Set Strategy Cash
+        self.window = 5
+        self.modelBySymbol = {}
+        self.lookback = 30              # Look-back period for training set- 30 Days
+        
+        for ticker in ["BTCUSD", "ETHUSD"]:
+            
+           
+            symbol = self.AddCrypto(ticker, Resolution.Minute, Market.Bitfinex)
+        self.SetBenchmark("BTCUSD")
+        self.NeuralNetworkTraining_new() # train model 1st time
+        
+        # Train Neural Network every monday
+        self.Train(
+            self.DateRules.Every(DayOfWeek.Monday),
+            self.TimeRules.AfterMarketOpen("BTCUSD"),
+            self.NeuralNetworkTraining_new)
+        
+        # Place trades every day, 30 minutes after the market is open
+        self.Schedule.On(
+            self.DateRules.EveryDay("BTCUSD"),
+            self.TimeRules.AfterMarketOpen("BTCUSD", 60*13.5),
+            self.Trade_new)
+        self.Schedule.On(
+            self.DateRules.EveryDay("BTCUSD"),
+            self.TimeRules.AfterMarketOpen("BTCUSD", 60*9),
+            self.Trade_new)
+        self.Schedule.On(
+            self.DateRules.EveryDay("BTCUSD"),
+            self.TimeRules.AfterMarketOpen("BTCUSD", 60*20),
+            self.Trade_new)
+            
+        
+    def OnEndOfAlgorithm(self):
+        ''' Save the data and the mode using the ObjectStore '''
+        for symbol, model in self.modelBySymbol.items():
+            modelStr = json.dumps(serialize_keras_object(model))
+            self.ObjectStore.Save(f'{symbol}_model', modelStr)
+            self.Debug(f'Model for {symbol} sucessfully saved in the ObjectStore')
+    
+    def NeuralNetworkTraining(self):
+        '''Train the Neural Network and save the model in the ObjectStore'''
+        symbols = self.Securities.keys()
+        
+        # Daily historical data is used to train the machine learning model
+        history = self.History(symbols, self.lookback + 1, Resolution.Daily)
+        history = history.open.unstack(0)
+        for symbol in symbols:
+            if symbol not in history:
+                continue
+            predictor = history[symbol][:-1]
+            predictand = history[symbol][1:]
+           
+            # build a neural network from the 1st layer to the last layer
+            model = Sequential()
+            model.add(LSTM(10, input_dim = 1))
+            model.add(Activation('relu'))
+            model.add(LSTM(1))
+            sgd = SGD(lr = 0.01)   # learning rate = 0.01
+           
+            # choose loss function and optimizing method
+            model.compile(loss='mse', optimizer=sgd)
+            
+            # pick an iteration number large enough for convergence
+            for step in range(200):
+             
+                # training the model
+                cost = model.train_on_batch(predictor, predictand)
+            self.modelBySymbol[symbol] = model
+    
+    def Trade(self):
+        '''
+        Predict the price using the trained model and out-of-sample data
+        Enter or exit positions based on relationship of the open price of the current bar and the prices defined by the machine learning model.
+        Liquidate if the open price is below the sell price and buy if the open price is above the buy price
+        '''
+        target = 1 / len(self.Securities)
+        for symbol, model in self.modelBySymbol.items():
+            
+            # Get the out-of-sample history
+            history = self.History(symbol, self.lookback, Resolution.Daily)
+            history = history.open.unstack(0)[symbol]
+            
+            # Get the final predicted price
+            prediction = model.predict(history)[0][-1]
+            historyStd = np.std(history)
+            holding = self.Portfolio[symbol]
+            openPrice = self.CurrentSlice[symbol].Open
+            
+            # Follow the trend
+            if holding.Invested:
+                if openPrice < prediction - historyStd:
+                    self.Liquidate(symbol)
+            else:
+                if openPrice > prediction + historyStd:
+                    self.SetHoldings(symbol, target)
+    
+    #Created a new trade function 
+    def Trade_new(self):
+        '''
+        Predict the price using the trained model and out-of-sample data
+        Enter or exit positions based on relationship of the open price of the current bar and the prices defined by the machine learning model.
+        Liquidate if the open price is below the sell price and buy if the open price is above the buy price
+        '''
+        self.Debug(self.UtcTime)
+        target = 1 / len(self.Securities)
+        for symbol, model in self.modelBySymbol.items():
+            
+            # Get the out-of-sample history
+            history = self.History(symbol, self.lookback, Resolution.Daily)
+            history = history.open.unstack(0)[symbol]
+            X,_=self.window_data(pd.DataFrame(history), self.window)
+            if len(X.shape) < 2:
+                continue
+            X = X.reshape((X.shape[0], X.shape[1], 1))
+            
+            # Get the final predicted price
+            prediction = model.predict(X)[0][-1] #model.predict X
+            historyStd = np.std(history)
+            holding = self.Portfolio[symbol]
+            
+            #continue does not run the code below if the data is not present
+            if not self.CurrentSlice.ContainsKey(symbol):
+                continue
+            openPrice = self.CurrentSlice[symbol].Close
+            
+            # Follow the trend - this is how you decide to buy or sell
+            if holding.Invested:
+                if openPrice < prediction - historyStd:
+                    self.Liquidate(symbol)
+            else:
+                if openPrice > prediction + historyStd:
+                    self.SetHoldings(symbol, target)
+    
+    def window_data(self, df, window):
+       
+        """
+        This function accepts the column number for the features (X) and the target (y).
+        It chunks the data up with a rolling window of Xt - window to predict Xt.
+        It returns two numpy arrays of X and y.
+        """
+        X = []
+        y = []
+        
+        # df=pd.DataFrame({'features':history.index, 'target':history.values})
+        # df = pd.DataFrame(X, y = ['features', 'target'])
+        
+        for i in range(len(df) - window):
+            features = df.iloc[i : (i + window), 0]
+            target = df.iloc[(i + window), 0]
+            X.append(features)
+            y.append(target)
+        return np.array(X), np.array(y).reshape(-1, 1)
+    def NeuralNetworkTraining_new(self):
+        '''Train the Neural Network and save the model in the ObjectStore'''
+        symbols = self.Securities.keys()
+      
+        # Daily historical data is used to train the machine learning model
+        
+        history = self.History(symbols, self.lookback + 1, Resolution.Daily)
+        history = history.open.unstack(0)
+        for symbol in symbols:
+            if symbol not in history:
+                continue
+            X,y=self.window_data(pd.DataFrame(history[symbol]), self.window)
+            X = X.reshape((X.shape[0], X.shape[1], 1)) 
+            
+            #converting the window data to tensors
+            
+            predictor = history[symbol][:-1]
+            predictand = history[symbol][1:]
+            
+            # build a neural network from the 1st layer to the last layer
+            model = Sequential()
+            model.add(LSTM(10, input_shape =(self.window, 1)))
+            #input_shape=(X.shape[1], 1))
+            # change to LSTM, change input_dim to input_shape, give it the correct shape
+            #model.add(Activation('relu'))
+            model.add(Dense(1))
+            sgd = SGD(lr = 0.01)   # learning rate = 0.01
+           
+            # choose loss function and optimizing method
+            model.compile(loss='mse', optimizer=sgd)
+           
+            # pick an iteration number large enough for convergence
+            #for step in range(200):
+                
+            # training the model
+            model.fit(X, y, epochs=10, shuffle=False, batch_size=1, verbose=1)
+            
+            # cost = model.train_on_batch(predictor, predictand) #use model.fit
+            self.modelBySymbol[symbol] = model
+
+
+
+    
+
+
+
+
+
+
+
+
+
