@@ -11,9 +11,9 @@ We used historical data for Bitcoin and Ethereum from Bitfinex and then trained 
 
 ## Task Breakdown 
 Source code from https://github.com/QuantConnect/Lean/blob/master/Algorithm.Python/KerasNeuralNetworkAlgorithm.py
-Compile back data for Bitcoin and Ethereum using Bitfinex and created a NeuralNetworkAlgorithm that accurately predicts future data. 
+We compiled back data for Bitcoin and Ethereum using Bitfinex and created a NeuralNetworkAlgorithm that accurately predicts future data. 
 
-To begin, define the KerasNeuralNetworkAlgorithm. The KerasNeuralNetworkAlgorithm is an algorithm that inherits from the QCAlgorithm class.  It will be training
+To begin, we defined the KerasNeuralNetworkAlgorithm. The KerasNeuralNetworkAlgorithm is an algorithm that inherits from the QCAlgorithm class.  It will be training
 the model every monday to keep the model fresh and dynamic, while trading three times daily.
 
 Attributes used for this are as follows:
@@ -22,15 +22,15 @@ self.lookback - trains the model based off of the past n days
 self.modelBySymbol - a dictionary of models accessible by a symbol
 self.window - the number of previous data points used to forecast a prediction
   
-Then we define the initialize function with Start Date, Set type of account, Window, ModelbySymbol and Lookback for BTC and ETH.
+Then we defined the initialize function with Start Date, Set type of account, Window, ModelbySymbol and Lookback for BTC and ETH.
 
-After this we set the Benchmark (BTCUSD) and train the model the first time with our NeuralNetworkTraining_new function.
+After this we set the Benchmark (BTCUSD) and trained the model the first time with our NeuralNetworkTraining_new function.
 
 Following this we set the Neural network to train every Monday and scheduled it to trade 30 minutes after markets open in North America, Europe and Asia respectively.
 
-We use daily historical data to train our machine learning model and build a neural network from 1st to last layer using the LSTM model.
+We used daily historical data to train our machine learning model and built a neural network from 1st to last layer using the LSTM model.
 
-We then train the models.
+We then trained the models.
 
 We created a new trade function based on the source code provided to predict the price using the trained model and out-of-sample data.
 
