@@ -60,3 +60,18 @@ we could adjust the time we look back
 we could add indicators 
 
 we could add more coins and we could adjust the window 
+
+Charts - 
+
+Benchmark is the price of bitcoin
+
+Daily Performance of our algorithm is the first chart
+
+Our Algo did not beat the benchmark 
+
+Our algo's largest draw down was 36%
+
+BTC's largest draw down was similar 
+
+Our Algo's Annual Standard Deviation was .392
+
